@@ -1,0 +1,46 @@
+name: ✨ Feature request
+description: Предложи новую функцию или улучшение
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему решаем
+      description: Что не так или чего не хватает?
+      placeholder: Когда записываю длинные встречи, теряюсь где что обсуждали...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+      description: Как бы ты хотел, чтобы это работало?
+      placeholder: Хочется таймкоды в .md с кликабельными ссылками на моменты видео
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Какие ещё варианты рассматривал?
+      placeholder: Можно смотреть .vtt отдельно, но неудобно
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Насколько критично?
+      options:
+        - Приятно бы иметь
+        - Сильно упростило бы жизнь
+        - Блокер для использования
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительно
+      description: Скриншоты, ссылки на похожие решения, что угодно

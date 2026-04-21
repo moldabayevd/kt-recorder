@@ -1,0 +1,53 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.nova/
+
+# Models (большие, не коммитим)
+*.bin
+*.mlmodelc/
+whisper-models/
+
+# User recordings
+Recordings/
+*.mp4
+*.mov
+*.m4a
+*.wav
+*.mp3
+*.srt
+*.vtt
+!assets/*.mp4
+!assets/*.gif
+
+# Logs
+*.log
+*.err
+
+# Local configs (safety net)
+.config/
+config.local.sh
+
+# Python (если вдруг кто-то добавит скрипты)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts
+dist/
+build/
+*.pkg
+*.dmg

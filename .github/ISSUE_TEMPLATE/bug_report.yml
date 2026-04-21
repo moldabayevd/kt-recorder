@@ -1,0 +1,81 @@
+name: 🐛 Bug report
+description: Что-то сломалось или работает не так
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что заглянул! Заполни пожалуйста все поля — это сильно ускорит разбор.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Что произошло
+      description: Опиши проблему в двух словах
+      placeholder: Watcher падает после 10 минут записи...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести
+      description: Пошагово, чтобы я мог повторить
+      placeholder: |
+        1. Открыл QuickRecorder
+        2. Начал запись
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что должно было случиться
+      placeholder: Ожидал получить .md файл в папке Recordings
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: Версия macOS
+      placeholder: "14.5 Sonoma"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Архитектура
+      options:
+        - Apple Silicon (M1/M2/M3/M4)
+        - Intel
+    validations:
+      required: true
+
+  - type: input
+    id: kt-version
+    attributes:
+      label: Версия KT Recorder
+      description: Из `git log -1` или тэга
+      placeholder: "0.1.0 / commit abc123"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи
+      description: Выхлоп из `/tmp/kt-recorder.log` и `/tmp/kt-recorder.err`
+      render: shell
+      placeholder: |
+        $ tail -30 /tmp/kt-recorder.err
+        ...
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительно
+      description: Всё остальное, что может быть важно
