@@ -81,11 +81,13 @@ for dep in "${BREW_DEPS[@]}"; do
 done
 
 echo ""
-info "Устанавливаю QuickRecorder..."
-if brew list --cask quickrecorder &> /dev/null; then
-    ok "QuickRecorder уже установлен"
+info "Проверяю QuickRecorder..."
+if [ -d "/Applications/QuickRecorder.app" ]; then
+    ok "QuickRecorder.app найден в /Applications"
+elif brew list --cask quickrecorder &> /dev/null; then
+    ok "QuickRecorder уже установлен через brew"
 else
-    brew install --cask quickrecorder
+    brew install --cask lihaoyun6/tap/quickrecorder
 fi
 
 # --- Whisper model ----------------------------------------------------------
@@ -104,6 +106,38 @@ else
     info "Качаю Whisper Large-v3 (~3 ГБ, может занять несколько минут)..."
     curl -L --progress-bar -o "$MODEL_FILE" "$MODEL_URL"
     ok "Модель скачана"
+fi
+
+# Russian fine-tune (antony66) — лучше пунктуация и распознавание имён
+RU_MODEL_FILE="$MODELS_DIR/ggml-large-v3-russian.bin"
+RU_MODEL_URL="https://huggingface.co/Limtech/whisper-large-v3-russian-ggml/resolve/main/ggml-model.bin"
+
+if [ -f "$RU_MODEL_FILE" ]; then
+    ok "Русский fine-tune уже скачан"
+else
+    echo ""
+    echo -n "Скачать русский fine-tune (~3 ГБ, рекомендуется для русской речи)? [Y/n] "
+    read -r REPLY_RU
+    REPLY_RU=${REPLY_RU:-Y}
+    if [[ $REPLY_RU =~ ^[Yy]$ ]]; then
+        info "Качаю whisper-large-v3-russian (Limtech)..."
+        curl -L --progress-bar -o "$RU_MODEL_FILE" "$RU_MODEL_URL"
+        ok "Русский fine-tune скачан"
+    else
+        info "Пропущено. Можно скачать позже: $RU_MODEL_URL"
+    fi
+fi
+
+# VAD model (Silero) — режет тишину, борется с галлюцинациями-повторами
+VAD_MODEL_FILE="$MODELS_DIR/ggml-silero-v5.1.2.bin"
+VAD_MODEL_URL="https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
+
+if [ -f "$VAD_MODEL_FILE" ]; then
+    ok "VAD-модель Silero уже скачана"
+else
+    info "Качаю VAD Silero (~1 МБ)..."
+    curl -L --progress-bar -o "$VAD_MODEL_FILE" "$VAD_MODEL_URL"
+    ok "VAD-модель скачана"
 fi
 
 # --- Install scripts --------------------------------------------------------
@@ -126,15 +160,22 @@ CONFIG_FILE="$CONFIG_DIR/config.sh"
 mkdir -p "$CONFIG_DIR"
 
 if [ ! -f "$CONFIG_FILE" ]; then
+    # Если есть русский fine-tune — ставим его дефолтным
+    if [ -f "$RU_MODEL_FILE" ]; then
+        DEFAULT_MODEL="$RU_MODEL_FILE"
+    else
+        DEFAULT_MODEL="$MODEL_FILE"
+    fi
     cat > "$CONFIG_FILE" << EOF
 # KT Recorder configuration
-# Полная документация: https://github.com/YOUR_USERNAME/kt-recorder-with-stt
 
 # Папка, за которой следит watcher
 RECORDINGS_DIR="\$HOME/Recordings"
 
-# Путь к модели Whisper (см. docs/custom-models.md для альтернатив)
-WHISPER_MODEL="$MODEL_FILE"
+# Путь к модели Whisper.
+# Дефолтный large-v3:        $MODEL_FILE
+# Русский fine-tune:         $RU_MODEL_FILE
+WHISPER_MODEL="$DEFAULT_MODEL"
 
 # Язык транскрибации: ru, en, de, fr, es, auto, ...
 WHISPER_LANG="ru"
@@ -145,12 +186,28 @@ OUTPUT_FORMATS="txt,vtt"
 # Открывать Finder с папкой встречи после готовности
 OPEN_FINDER_ON_DONE=true
 
-# Звук уведомления о готовности (Basso, Glass, Ping, Purr, Sosumi, Submarine)
+# Звук уведомления (Basso, Glass, Ping, Purr, Sosumi, Submarine)
 NOTIFY_SOUND="Glass"
+
+# Voice Activity Detection — режет тишину, борется с повторами-галлюцинациями
+VAD_MODEL="$VAD_MODEL_FILE"
+
+# Initial prompt — словарь имён и терминов, чтобы Whisper не коверкал их
+PROMPT_FILE="\$HOME/.config/kt-recorder/prompt.txt"
 EOF
     ok "Создан конфиг: $CONFIG_FILE"
 else
     ok "Конфиг уже существует: $CONFIG_FILE"
+fi
+
+# Шаблон prompt-словаря (можно редактировать под свой домен)
+PROMPT_FILE="$CONFIG_DIR/prompt.txt"
+if [ ! -f "$PROMPT_FILE" ]; then
+    cat > "$PROMPT_FILE" << 'EOF'
+Имена коллег, термины компании, акронимы. Замени на свои.
+Например: Канат Болжанович, Марат, Кирилл. Термины: МЖК, АТС, ОДС, KitWork.
+EOF
+    ok "Создан шаблон prompt-словаря: $PROMPT_FILE"
 fi
 
 mkdir -p "$HOME/Recordings"

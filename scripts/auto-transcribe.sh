@@ -22,6 +22,8 @@ source "$CONFIG_FILE"
 : "${OUTPUT_FORMATS:=txt,vtt}"
 : "${OPEN_FINDER_ON_DONE:=true}"
 : "${NOTIFY_SOUND:=Glass}"
+: "${VAD_MODEL:=$HOME/whisper-models/ggml-silero-v5.1.2.bin}"
+: "${PROMPT_FILE:=$HOME/.config/kt-recorder/prompt.txt}"
 
 # --- Dependencies check -----------------------------------------------------
 
@@ -80,11 +82,26 @@ process_file() {
     mkdir -p "$meeting_dir"
     mv "$file" "$meeting_dir/$basename"
 
-    # Extract audio as 16kHz mono WAV for whisper
+    # Extract audio as 16kHz mono WAV. If file has multiple audio streams
+    # (QuickRecorder writes mic + system as separate tracks), mix them.
     local audio_wav="$meeting_dir/_audio.wav"
-    if ! ffmpeg -y -i "$meeting_dir/$basename" \
-                -ar 16000 -ac 1 -c:a pcm_s16le \
-                "$audio_wav" 2>/dev/null; then
+    local nstreams
+    nstreams=$(ffprobe -v error -select_streams a -show_entries stream=index \
+                       -of csv=p=0 "$meeting_dir/$basename" | wc -l | tr -d ' ')
+    echo "[$(date '+%H:%M:%S')] Audio streams: $nstreams"
+
+    local ffmpeg_status=0
+    if [ "$nstreams" -gt 1 ]; then
+        ffmpeg -y -i "$meeting_dir/$basename" \
+               -filter_complex "amix=inputs=$nstreams:duration=longest:normalize=0" \
+               -ar 16000 -ac 1 -c:a pcm_s16le \
+               "$audio_wav" 2>&1 | tail -3 || ffmpeg_status=$?
+    else
+        ffmpeg -y -i "$meeting_dir/$basename" \
+               -ar 16000 -ac 1 -c:a pcm_s16le \
+               "$audio_wav" 2>&1 | tail -3 || ffmpeg_status=$?
+    fi
+    if [ "$ffmpeg_status" -ne 0 ] || [ ! -s "$audio_wav" ]; then
         notify "KT Recorder ✗" "Не удалось извлечь аудио: $basename" "Basso"
         return 1
     fi
@@ -101,12 +118,24 @@ process_file() {
         esac
     done
 
-    # Run whisper.cpp (Metal auto-enabled on Apple Silicon)
-    if ! whisper-cli -m "$WHISPER_MODEL" -l "$WHISPER_LANG" \
-                     -f "$audio_wav" \
-                     "${format_flags[@]}" \
-                     -of "$meeting_dir/_transcript" \
-                     2>&1 | tail -3; then
+    # Run whisper.cpp. Anti-hallucination flags:
+    #   -mc 0   — no text context between segments (no repeat-loops)
+    #   --vad   — skip silence (with Silero VAD model)
+    local vad_args=()
+    if [ -f "$VAD_MODEL" ]; then
+        vad_args=(--vad --vad-model "$VAD_MODEL")
+    fi
+    local prompt_args=()
+    if [ -f "$PROMPT_FILE" ] && [ -s "$PROMPT_FILE" ]; then
+        prompt_args=(--prompt "$(cat "$PROMPT_FILE")")
+    fi
+    local whisper_status=0
+    whisper-cli -m "$WHISPER_MODEL" -l "$WHISPER_LANG" -pp -mc 0 \
+                "${vad_args[@]}" "${prompt_args[@]}" \
+                -f "$audio_wav" \
+                "${format_flags[@]}" \
+                -of "$meeting_dir/_transcript" 2>&1 || whisper_status=$?
+    if [ "$whisper_status" -ne 0 ]; then
         notify "KT Recorder ✗" "Ошибка whisper: $basename" "Basso"
         rm -f "$audio_wav"
         return 1

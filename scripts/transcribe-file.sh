@@ -34,6 +34,8 @@ source "$CONFIG_FILE"
 : "${WHISPER_MODEL:=$HOME/whisper-models/ggml-large-v3.bin}"
 : "${WHISPER_LANG:=ru}"
 : "${OUTPUT_FORMATS:=txt,vtt}"
+: "${VAD_MODEL:=$HOME/whisper-models/ggml-silero-v5.1.2.bin}"
+: "${PROMPT_FILE:=$HOME/.config/kt-recorder/prompt.txt}"
 
 INPUT="$1"
 LANG="${2:-$WHISPER_LANG}"
@@ -53,10 +55,20 @@ if [ "$INPUT" != "$meeting_dir/$basename" ]; then
     cp "$INPUT" "$meeting_dir/$basename"
 fi
 
-echo "→ Извлекаю аудио..."
 audio_wav="$meeting_dir/_audio.wav"
-ffmpeg -y -i "$meeting_dir/$basename" -ar 16000 -ac 1 -c:a pcm_s16le \
-       "$audio_wav" 2>/dev/null
+nstreams=$(ffprobe -v error -select_streams a -show_entries stream=index \
+                   -of csv=p=0 "$meeting_dir/$basename" | wc -l | tr -d ' ')
+
+if [ "$nstreams" -gt 1 ]; then
+    echo "→ Извлекаю аудио (микширую $nstreams дорожки)..."
+    ffmpeg -y -i "$meeting_dir/$basename" \
+           -filter_complex "amix=inputs=$nstreams:duration=longest:normalize=0" \
+           -ar 16000 -ac 1 -c:a pcm_s16le "$audio_wav" 2>&1 | tail -3
+else
+    echo "→ Извлекаю аудио..."
+    ffmpeg -y -i "$meeting_dir/$basename" \
+           -ar 16000 -ac 1 -c:a pcm_s16le "$audio_wav" 2>&1 | tail -3
+fi
 
 format_flags=()
 IFS=',' read -ra FORMATS <<< "$OUTPUT_FORMATS"
@@ -69,8 +81,14 @@ for fmt in "${FORMATS[@]}"; do
     esac
 done
 
+vad_args=()
+[ -f "$VAD_MODEL" ] && vad_args=(--vad --vad-model "$VAD_MODEL")
+prompt_args=()
+[ -f "$PROMPT_FILE" ] && [ -s "$PROMPT_FILE" ] && prompt_args=(--prompt "$(cat "$PROMPT_FILE")")
+
 echo "→ Транскрибирую (язык: $LANG)..."
-whisper-cli -m "$WHISPER_MODEL" -l "$LANG" \
+whisper-cli -m "$WHISPER_MODEL" -l "$LANG" -pp -mc 0 \
+            "${vad_args[@]}" "${prompt_args[@]}" \
             -f "$audio_wav" \
             "${format_flags[@]}" \
             -of "$meeting_dir/_transcript"
