@@ -92,6 +92,26 @@ bash scripts/setup-qwen3.sh
 Подробности и альтернативы (whisper-base.kk для чистого казахского) — в
 [docs/custom-models.md](docs/custom-models.md#-казахский--kkru-code-switching).
 
+## 🎨 Красивое меню (TUI)
+
+```bash
+brew install gum
+./scripts/kt
+```
+
+Меню с:
+- 🎬 Транскрибация (с выбором файла и превью)
+- 📝 Саммари
+- ⚡ Полный пайплайн (транскрипция → саммари)
+- ⚙️ Настройки
+
+Со спиннерами, превью файла (размер/длительность), открытием в Finder.
+
+CLI-режим для автоматизации:
+```bash
+./scripts/kt full ~/Recordings/meeting.mp4
+```
+
 ## 📝 Саммаризация встреч
 
 Новый скрипт `scripts/summarize.sh` делает из транскрипта структурированный

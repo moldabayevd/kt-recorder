@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+# kt — красивое меню для kt-recorder.
+#
+# Требует: gum (brew install gum)
+# Опционально: ffprobe (для длительности), osascript (для "открыть в Finder")
+#
+# Использование:
+#   kt                    # интерактивное меню
+#   kt transcribe <file>  # прямая команда, обойти меню
+#   kt summarize <file>
+#   kt full <file>        # transcribe + summarize
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$HOME/.config/kt-recorder/config.sh"
+# shellcheck disable=SC1090
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+
+: "${RECORDINGS_DIR:=$HOME/Recordings}"
+: "${SUMMARIZER_MODEL:=qwen3:32b}"
+: "${SUMMARIZER_BACKEND:=ollama}"
+: "${KK_BACKEND:=qwen3}"
+
+# ─── Цвета / стили ─────────────────────────────────────────────────────────
+
+if ! command -v gum >/dev/null 2>&1; then
+    cat << EOF
+╔═══════════════════════════════════════════════════════════════╗
+║  Для красивого меню нужна утилита gum:                        ║
+║                                                               ║
+║      brew install gum                                         ║
+║                                                               ║
+║  Это топ-инструмент от Charm для bash TUI — спиннеры, меню,   ║
+║  прогресс-бары. Лёгкая, ~10 МБ.                              ║
+║                                                               ║
+║  После установки просто запусти kt снова.                     ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+    exit 1
+fi
+
+C_PRIMARY="212"   # розовый акцент
+C_SUCCESS="46"    # зелёный
+C_WARN="214"      # оранж
+C_MUTED="244"     # серый
+C_INFO="39"       # голубой
+
+banner() {
+    gum style \
+        --border double \
+        --border-foreground "$C_PRIMARY" \
+        --padding "1 4" \
+        --margin "1 0" \
+        --align center \
+        --bold \
+        --foreground "$C_PRIMARY" \
+        "🎙️  KT Recorder" \
+        "$(gum style --foreground "$C_MUTED" --italic "приватная транскрипция встреч на Mac")"
+}
+
+info()    { gum style --foreground "$C_INFO"    "$@"; }
+success() { gum style --foreground "$C_SUCCESS" --bold "$@"; }
+warn()    { gum style --foreground "$C_WARN"    "$@"; }
+muted()   { gum style --foreground "$C_MUTED"   "$@"; }
+
+# ─── Выбор файла ───────────────────────────────────────────────────────────
+
+pick_file() {
+    local prompt="${1:-Выбери файл встречи}"
+    local start_dir="${2:-$RECORDINGS_DIR}"
+
+    if [ ! -d "$start_dir" ]; then
+        start_dir="$HOME"
+    fi
+
+    gum style --foreground "$C_INFO" "$prompt (↑↓ навигация, Enter выбор, Esc отмена)"
+    gum file --directory "$start_dir" --file --height 20
+}
+
+# ─── Превью файла (имя, размер, длительность) ──────────────────────────────
+
+preview_file() {
+    local f="$1"
+    local size_h
+    size_h=$(du -h "$f" | awk '{print $1}')
+    local dur="—"
+    if command -v ffprobe >/dev/null 2>&1; then
+        local raw
+        raw=$(ffprobe -v error -show_entries format=duration \
+              -of default=noprint_wrappers=1:nokey=1 "$f" 2>/dev/null || echo "")
+        if [ -n "$raw" ]; then
+            dur=$(awk -v s="$raw" 'BEGIN{h=int(s/3600); m=int((s%3600)/60); printf "%d:%02d", h, m}')
+        fi
+    fi
+
+    gum style \
+        --border rounded \
+        --border-foreground "$C_MUTED" \
+        --padding "0 2" \
+        --margin "0 0" \
+        "$(gum style --bold "Файл:") $(basename "$f")" \
+        "$(gum style --bold "Размер:") $size_h   $(gum style --bold "Длительность:") $dur"
+}
+
+# ─── Операции со спиннерами ────────────────────────────────────────────────
+
+do_transcribe() {
+    local file="$1"
+    local dir name
+    name=$(basename "$file")
+    name="${name%.*}"
+    dir=$(dirname "$file")
+    local out_md="$dir/$name/$name.md"
+
+    gum style --foreground "$C_INFO" --bold "→ Транскрибирую..."
+
+    # Запускаем транскрипцию в фоне чтобы обернуть в спиннер
+    local logfile
+    logfile=$(mktemp)
+    (
+        "$SCRIPT_DIR/transcribe-auto.sh" "$file" > "$logfile" 2>&1
+        echo "$?" > "${logfile}.status"
+    ) &
+    local pid=$!
+
+    gum spin --spinner dot \
+             --title "Определяю язык → выбираю модель → распознаю речь..." \
+             --spinner.foreground "$C_PRIMARY" \
+             -- bash -c "while kill -0 $pid 2>/dev/null; do sleep 0.5; done"
+
+    wait $pid
+    local status
+    status=$(cat "${logfile}.status" 2>/dev/null || echo "1")
+
+    if [ "$status" != "0" ]; then
+        warn "✗ Транскрипция упала. Лог:"
+        tail -20 "$logfile"
+        rm -f "$logfile" "${logfile}.status"
+        return 1
+    fi
+
+    rm -f "$logfile" "${logfile}.status"
+
+    if [ -f "$out_md" ]; then
+        success "✓ Транскрипт готов: $out_md"
+        echo "$out_md"
+    else
+        # На случай если .md лежит в другом месте, ищем свежий
+        local found
+        found=$(find "$dir" -name "*.md" -newer "$file" 2>/dev/null | head -1)
+        [ -n "$found" ] && success "✓ Транскрипт: $found" && echo "$found"
+    fi
+}
+
+do_summarize() {
+    local md_file="$1"
+    local out_md="${md_file%.md}-summary.md"
+
+    gum style --foreground "$C_INFO" --bold "→ Саммаризую через $SUMMARIZER_BACKEND ($SUMMARIZER_MODEL)..."
+
+    local logfile
+    logfile=$(mktemp)
+    (
+        "$SCRIPT_DIR/summarize.sh" "$md_file" "$out_md" > "$logfile" 2>&1
+        echo "$?" > "${logfile}.status"
+    ) &
+    local pid=$!
+
+    gum spin --spinner points \
+             --title "Модель думает над структурой протокола..." \
+             --spinner.foreground "$C_PRIMARY" \
+             -- bash -c "while kill -0 $pid 2>/dev/null; do sleep 0.5; done"
+
+    wait $pid
+    local status
+    status=$(cat "${logfile}.status" 2>/dev/null || echo "1")
+
+    if [ "$status" != "0" ]; then
+        warn "✗ Саммаризация упала. Лог:"
+        tail -20 "$logfile"
+        rm -f "$logfile" "${logfile}.status"
+        return 1
+    fi
+
+    rm -f "$logfile" "${logfile}.status"
+    success "✓ Саммари готов: $out_md"
+    echo "$out_md"
+}
+
+open_in_finder() {
+    local f="$1"
+    if command -v osascript >/dev/null 2>&1; then
+        osascript -e "tell application \"Finder\" to reveal POSIX file \"$f\"" >/dev/null 2>&1
+        osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1
+    elif command -v explorer.exe >/dev/null 2>&1; then
+        explorer.exe "$(dirname "$f")"
+    fi
+}
+
+post_action_menu() {
+    local f="$1"
+    echo ""
+    local choice
+    choice=$(gum choose --cursor.foreground "$C_PRIMARY" \
+        "📂 Открыть в Finder" \
+        "👀 Показать содержимое" \
+        "🔄 В меню" \
+        "🚪 Выход")
+
+    case "$choice" in
+        *"Finder"*)  open_in_finder "$f"; post_action_menu "$f" ;;
+        *"содержимое"*)
+            gum pager < "$f"
+            post_action_menu "$f" ;;
+        *"меню"*)    return 0 ;;
+        *"Выход"*)   exit 0 ;;
+    esac
+}
+
+# ─── Действия меню ─────────────────────────────────────────────────────────
+
+action_transcribe() {
+    local file
+    file=$(pick_file "Выбери запись (mp4 / m4a / mov / wav)")
+    [ -z "$file" ] && return
+    [ -f "$file" ] || { warn "✗ Файл не существует: $file"; return; }
+
+    preview_file "$file"
+    gum confirm "Транскрибировать?" || return
+
+    local out
+    out=$(do_transcribe "$file")
+    [ -n "$out" ] && post_action_menu "$out"
+}
+
+action_summarize() {
+    local file
+    file=$(pick_file "Выбери транскрипт (.md)" "$RECORDINGS_DIR")
+    [ -z "$file" ] && return
+    [ -f "$file" ] || return
+
+    case "$file" in
+        *.md) ;;
+        *) warn "✗ Нужен .md файл, не $file"; return ;;
+    esac
+
+    preview_file "$file"
+    info "Бэкенд: $SUMMARIZER_BACKEND ($SUMMARIZER_MODEL)"
+    gum confirm "Сделать саммари?" || return
+
+    local out
+    out=$(do_summarize "$file")
+    [ -n "$out" ] && post_action_menu "$out"
+}
+
+action_full() {
+    local file
+    file=$(pick_file "Выбери запись для полного пайплайна")
+    [ -z "$file" ] && return
+    [ -f "$file" ] || return
+
+    preview_file "$file"
+    muted "Шаг 1: транскрипция → Шаг 2: саммари"
+    gum confirm "Запустить полный пайплайн?" || return
+
+    local transcript
+    transcript=$(do_transcribe "$file")
+    [ -z "$transcript" ] && return
+
+    echo ""
+    local summary
+    summary=$(do_summarize "$transcript")
+    [ -n "$summary" ] && post_action_menu "$summary"
+}
+
+action_settings() {
+    gum style --border rounded --padding "1 2" --border-foreground "$C_INFO" \
+        "$(gum style --bold "Настройки (config.sh)")" \
+        "" \
+        "Recordings:      $RECORDINGS_DIR" \
+        "KK_BACKEND:      $KK_BACKEND" \
+        "Summarizer:      $SUMMARIZER_BACKEND / $SUMMARIZER_MODEL" \
+        "" \
+        "$(muted "Правь: $CONFIG_FILE")"
+
+    gum confirm "Открыть config в \$EDITOR?" && "${EDITOR:-nano}" "$CONFIG_FILE"
+}
+
+# ─── Главное меню ──────────────────────────────────────────────────────────
+
+main_menu() {
+    clear
+    banner
+
+    local choice
+    choice=$(gum choose \
+        --cursor.foreground "$C_PRIMARY" \
+        --height 10 \
+        "🎬  Транскрибировать запись" \
+        "📝  Сделать саммари из транскрипта" \
+        "⚡  Полный пайплайн (транскрипция → саммари)" \
+        "⚙️   Настройки" \
+        "🚪  Выход")
+
+    case "$choice" in
+        *"Транскрибировать"*) action_transcribe ;;
+        *"саммари"*)          action_summarize ;;
+        *"Полный"*)           action_full ;;
+        *"Настройки"*)        action_settings ;;
+        *"Выход"*|"")         exit 0 ;;
+    esac
+}
+
+# ─── CLI режим (обход меню) ────────────────────────────────────────────────
+
+if [ $# -gt 0 ]; then
+    cmd="$1"
+    shift
+    case "$cmd" in
+        transcribe) do_transcribe "$1" ;;
+        summarize)  do_summarize "$1" ;;
+        full)
+            tr=$(do_transcribe "$1")
+            [ -n "$tr" ] && do_summarize "$tr"
+            ;;
+        *) echo "Usage: kt [transcribe|summarize|full] <file>" >&2; exit 1 ;;
+    esac
+    exit 0
+fi
+
+# ─── Интерактивный цикл ────────────────────────────────────────────────────
+
+while true; do
+    main_menu
+    echo ""
+done
