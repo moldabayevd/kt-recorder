@@ -274,6 +274,183 @@ action_full() {
     [ -n "$summary" ] && post_action_menu "$summary"
 }
 
+action_recordings_list() {
+    if [ ! -d "$RECORDINGS_DIR" ]; then
+        warn "✗ Папка записей не существует: $RECORDINGS_DIR"
+        muted "Создай её или поменяй RECORDINGS_DIR в config.sh"
+        sleep 2
+        return
+    fi
+
+    # Собираем все аудио/видео файлы в $RECORDINGS_DIR (корень и подпапки
+    # первого уровня — чтобы захватить и сырые записи, и созданные папки
+    # от transcribe-file.sh).
+    local -a recordings=()
+    while IFS= read -r f; do
+        recordings+=("$f")
+    done < <(find "$RECORDINGS_DIR" -maxdepth 2 \
+             \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.m4a" \
+                -o -iname "*.wav" -o -iname "*.mp3" \) \
+             -type f 2>/dev/null | sort -r)
+
+    if [ ${#recordings[@]} -eq 0 ]; then
+        gum style --border rounded --padding "1 2" --border-foreground "$C_WARN" \
+            "Записей не найдено в $RECORDINGS_DIR" \
+            "" \
+            "$(muted "Запиши встречу через QuickRecorder (⌘⇧R)")"
+        gum confirm "Открыть папку в Finder?" && open_in_finder "$RECORDINGS_DIR/."
+        return
+    fi
+
+    # Строим красивые строки меню со статусами
+    local -a labels=()
+    local -A label_to_file=()
+    local f base name parent_dir has_md has_summary status dur date_str time_str size_h
+
+    for f in "${recordings[@]}"; do
+        base=$(basename "$f")
+        name="${base%.*}"
+        parent_dir=$(dirname "$f")
+
+        # Возможные места транскрипта и саммари
+        has_md="false"
+        has_summary="false"
+        if [ -f "$parent_dir/$name/$name.md" ]; then
+            has_md="true"
+            [ -f "$parent_dir/$name/$name-summary.md" ] && has_summary="true"
+        elif [ "$(basename "$parent_dir")" = "$name" ] && [ -f "$parent_dir/$name.md" ]; then
+            has_md="true"
+            [ -f "$parent_dir/$name-summary.md" ] && has_summary="true"
+        fi
+
+        if [ "$has_summary" = "true" ]; then
+            status="🟢 summarized"
+        elif [ "$has_md" = "true" ]; then
+            status="🟡 transcribed"
+        else
+            status="🔴 raw"
+        fi
+
+        # Дата/время из имени файла (QuickRecorder пишет как
+        # "Recording at 2026-04-22 16.10.00.mp4") или из mtime
+        if [[ "$base" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]([0-9]{2})[\.:]([0-9]{2}) ]]; then
+            date_str="${BASH_REMATCH[1]}"
+            time_str="${BASH_REMATCH[2]}:${BASH_REMATCH[3]}"
+        else
+            date_str=$(stat -f "%Sm" -t "%Y-%m-%d" "$f" 2>/dev/null || stat -c "%y" "$f" 2>/dev/null | cut -d' ' -f1)
+            time_str=$(stat -f "%Sm" -t "%H:%M" "$f" 2>/dev/null || stat -c "%y" "$f" 2>/dev/null | awk '{print $2}' | cut -d: -f1-2)
+        fi
+
+        # Длительность через ffprobe
+        dur="—"
+        if command -v ffprobe >/dev/null 2>&1; then
+            local raw
+            raw=$(ffprobe -v error -show_entries format=duration \
+                  -of default=noprint_wrappers=1:nokey=1 "$f" 2>/dev/null || echo "")
+            if [ -n "$raw" ]; then
+                dur=$(awk -v s="$raw" 'BEGIN{h=int(s/3600); m=int((s%3600)/60); printf "%d:%02d", h, m}')
+            fi
+        fi
+
+        size_h=$(du -h "$f" 2>/dev/null | awk '{print $1}')
+
+        # Форматируем строку: дата  время  длительность  размер  статус  имя
+        local label
+        label=$(printf "%s  %s  %5s  %6s  %-14s  %s" \
+                "$date_str" "$time_str" "$dur" "$size_h" "$status" "$name")
+
+        labels+=("$label")
+        label_to_file["$label"]="$f"
+    done
+
+    gum style --foreground "$C_INFO" --bold "📋 Записи в $RECORDINGS_DIR"
+    gum style --foreground "$C_MUTED" \
+        "  дата        время  длит.    размер    статус          имя"
+
+    local picked
+    picked=$(printf '%s\n' "${labels[@]}" | gum choose \
+        --cursor.foreground "$C_PRIMARY" \
+        --height 20 \
+        --header "↑↓ выбор  •  Enter подтвердить  •  Esc назад")
+
+    [ -z "$picked" ] && return
+
+    local chosen_file="${label_to_file[$picked]}"
+    [ -z "$chosen_file" ] || [ ! -f "$chosen_file" ] && return
+
+    # Определяем что уже сделано и что можно запустить
+    local base name parent_dir
+    base=$(basename "$chosen_file")
+    name="${base%.*}"
+    parent_dir=$(dirname "$chosen_file")
+
+    local transcript_md=""
+    local summary_md=""
+    if [ -f "$parent_dir/$name/$name.md" ]; then
+        transcript_md="$parent_dir/$name/$name.md"
+        [ -f "$parent_dir/$name/$name-summary.md" ] && summary_md="$parent_dir/$name/$name-summary.md"
+    elif [ -f "$parent_dir/$name.md" ]; then
+        transcript_md="$parent_dir/$name.md"
+        [ -f "$parent_dir/$name-summary.md" ] && summary_md="$parent_dir/$name-summary.md"
+    fi
+
+    echo ""
+    preview_file "$chosen_file"
+
+    # Меню действий адаптивное
+    local -a actions=()
+    if [ -z "$transcript_md" ]; then
+        actions+=("⚡ Полный пайплайн (транскрипция + саммари)")
+        actions+=("🎬 Только транскрибировать")
+    elif [ -z "$summary_md" ]; then
+        actions+=("📝 Сделать саммари из транскрипта")
+        actions+=("🔁 Перетранскрибировать с нуля")
+    else
+        actions+=("📂 Открыть папку встречи")
+        actions+=("👀 Показать саммари")
+        actions+=("🔁 Перезапустить пайплайн")
+    fi
+    actions+=("⬅  Назад к списку")
+
+    local action
+    action=$(printf '%s\n' "${actions[@]}" | gum choose --cursor.foreground "$C_PRIMARY")
+
+    case "$action" in
+        *"Полный"*)
+            do_transcribe "$chosen_file" >/dev/null
+            local new_tr=""
+            [ -f "$parent_dir/$name/$name.md" ] && new_tr="$parent_dir/$name/$name.md"
+            [ -n "$new_tr" ] && do_summarize "$new_tr" >/dev/null && post_action_menu "$parent_dir/$name/$name-summary.md"
+            ;;
+        *"Только транскрибировать"*)
+            out=$(do_transcribe "$chosen_file")
+            [ -n "$out" ] && post_action_menu "$out"
+            ;;
+        *"Сделать саммари"*)
+            out=$(do_summarize "$transcript_md")
+            [ -n "$out" ] && post_action_menu "$out"
+            ;;
+        *"Перетранскрибировать"*|*"Перезапустить"*)
+            gum confirm "Удалить старые результаты и запустить заново?" || return
+            [ -n "$transcript_md" ] && rm -f "$transcript_md"
+            [ -n "$summary_md" ] && rm -f "$summary_md"
+            do_transcribe "$chosen_file" >/dev/null
+            local new_tr=""
+            [ -f "$parent_dir/$name/$name.md" ] && new_tr="$parent_dir/$name/$name.md"
+            [ -n "$new_tr" ] && do_summarize "$new_tr" >/dev/null && post_action_menu "$parent_dir/$name/$name-summary.md"
+            ;;
+        *"Открыть папку"*)
+            open_in_finder "$chosen_file"
+            ;;
+        *"Показать саммари"*)
+            [ -n "$summary_md" ] && gum pager < "$summary_md"
+            ;;
+        *"Назад"*|"")
+            return
+            ;;
+    esac
+}
+
 action_settings() {
     gum style --border rounded --padding "1 2" --border-foreground "$C_INFO" \
         "$(gum style --bold "Настройки (config.sh)")" \
@@ -296,15 +473,17 @@ main_menu() {
     local choice
     choice=$(gum choose \
         --cursor.foreground "$C_PRIMARY" \
-        --height 10 \
-        "🎬  Транскрибировать запись" \
-        "📝  Сделать саммари из транскрипта" \
-        "⚡  Полный пайплайн (транскрипция → саммари)" \
+        --height 12 \
+        "📋  Мои записи (список со статусами)" \
+        "🎬  Транскрибировать произвольный файл" \
+        "📝  Сделать саммари из .md транскрипта" \
+        "⚡  Полный пайплайн для одного файла" \
         "⚙️   Настройки" \
         "🚪  Выход")
 
     case "$choice" in
-        *"Транскрибировать"*) action_transcribe ;;
+        *"Мои записи"*)       action_recordings_list ;;
+        *"произвольный"*)     action_transcribe ;;
         *"саммари"*)          action_summarize ;;
         *"Полный"*)           action_full ;;
         *"Настройки"*)        action_settings ;;
