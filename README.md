@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/saqta-logo-transparent.png" />
-  <img src="assets/saqta-logo.png" width="180" alt="Saqta" />
-</picture>
+<img src="assets/saqta-logo.png" width="180" alt="Saqta" />
 
 # Saqta
 
