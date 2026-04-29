@@ -14,7 +14,7 @@
 [![Languages](https://img.shields.io/badge/languages-RU%20%7C%20EN%20%7C%20KK%20%7C%20kk%2Bru-blue?style=flat-square)](docs/custom-models.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
 
-[**Установка**](#-установка) • [**Как работает**](#-как-это-работает) • [**Конфигурация**](#️-конфигурация) • [**FAQ**](#-faq) • [**Contributing**](CONTRIBUTING.md)
+[**Установка**](#-установка) • [**Как работает**](#-как-это-работает) • [**Конфигурация**](#️-конфигурация) • [**FAQ**](#-faq) • [**Roadmap**](ROADMAP.md) • [**Contributing**](CONTRIBUTING.md)
 
 </div>
 

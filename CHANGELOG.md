@@ -42,9 +42,34 @@
   сравнением WER для разных вариантов
 
 ### Planned
-- Диаризация спикеров (v0.2)
-- Локальная саммаризация через Ollama + Sherkala-8B (v0.3)
-- Swift menu bar app (v0.4)
+
+См. [ROADMAP.md](ROADMAP.md) для полного плана. Кратко по релизам:
+
+**v0.2 — Native UI:**
+- Tauri-приложение (двойной клик в Dock вместо терминала)
+- Auto-detect Zoom/Meet/Teams встреч
+- DMG-installer
+
+**v0.3 — Pro-фичи бесплатно** (то за что Meetily берёт деньги):
+- Speaker diarization через pyannote (без 2 дорожек)
+- PDF/DOCX экспорт через pandoc
+- Custom summary templates (protocol / 1on1 / interview / lecture)
+- Гибкие LLM-провайдеры (Groq, OpenRouter, vLLM, LM Studio)
+
+**v0.4 — Live режим:**
+- Streaming transcription для ru/en через whisper-stream
+- Live preview во время записи + быстрые заметки/маркеры с таймкодом
+
+**v0.5 — Public release:**
+- Cross-platform (Windows + Linux)
+- Локализация UI (ru/kk/en)
+- Homebrew tap, MSI, AppImage, auto-update
+- Подписанный DMG
+
+**v0.6 — Personal LoRA:**
+- Сбор обучающих данных из исправленных пользователем `.md`
+- LoRA fine-tune на 4070 / Apple Silicon
+- Continuous learning с A/B сравнением
 
 ## [0.1.0] - 2026-04-22
 
