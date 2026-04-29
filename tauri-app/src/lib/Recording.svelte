@@ -1,14 +1,18 @@
 <script lang="ts">
   import {
     type Recording,
-    STATUS_INFO,
-    formatDuration,
-    formatSize,
     transcribe,
     summarize,
     exportFile,
     openInFinder,
   } from "./api";
+  import {
+    STATUS_LABELS,
+    ACTIONS,
+    formatDurationFriendly,
+    formatDateFriendly,
+    friendlyError,
+  } from "./strings";
 
   export let rec: Recording;
   export let onUpdate: () => void;
@@ -23,27 +27,37 @@
       await fn();
       onUpdate();
     } catch (e) {
-      alert(`Ошибка: ${e}`);
+      alert(friendlyError(String(e)));
     } finally {
       busy = false;
       busyMessage = "";
     }
   }
 
-  $: status = STATUS_INFO[rec.status];
+  $: status = STATUS_LABELS[rec.status];
+  $: dateLabel = formatDateFriendly(rec.date);
+  $: durationLabel = formatDurationFriendly(rec.duration_secs);
 </script>
 
 <div class="recording" class:busy>
   <div class="header">
-    <span class="status" style="color: {status.color}">{status.emoji}</span>
-    <div class="meta">
-      <div class="title">{rec.name}</div>
-      <div class="info">
-        {rec.date} {rec.time} · {formatDuration(rec.duration_secs)} ·
-        {formatSize(rec.size_bytes)} · {status.label}
-      </div>
+    <div class="status-badge" style="--status-color: {status.color}">
+      <span class="emoji">{status.emoji}</span>
+      <span class="label">{status.label}</span>
+    </div>
+    <div class="meta-line">
+      {#if dateLabel}<span>{dateLabel}</span>{/if}
+      {#if rec.time && rec.time !== "—"}<span>{rec.time}</span>{/if}
+      <span>·</span>
+      <span>{durationLabel}</span>
     </div>
   </div>
+
+  <div class="title" title={rec.path}>{rec.name}</div>
+
+  {#if status.hint}
+    <div class="hint">{status.hint}</div>
+  {/if}
 
   {#if busy}
     <div class="busy-bar">
@@ -53,26 +67,76 @@
   {:else}
     <div class="actions">
       {#if rec.status === "raw"}
-        <button on:click={() => run("Транскрибирую…", () => transcribe(rec.path))}>
-          🎬 Транскрибировать
+        <button
+          class="primary"
+          title={ACTIONS.transcribe.hint}
+          on:click={() =>
+            run(ACTIONS.transcribe.busy, () => transcribe(rec.path))}
+        >
+          {ACTIONS.transcribe.label}
+        </button>
+        <button
+          class="secondary"
+          title={ACTIONS.openFolder.hint}
+          on:click={() => openInFinder(rec.path)}
+        >
+          {ACTIONS.openFolder.label}
         </button>
       {:else if rec.status === "transcribed" && rec.transcript_path}
         <button
+          class="primary"
+          title={ACTIONS.summarize.hint}
           on:click={() =>
-            run("Саммари…", () => summarize(rec.transcript_path!, "protocol"))}
+            run(ACTIONS.summarize.busy, () =>
+              summarize(rec.transcript_path!, "protocol"),
+            )}
         >
-          📝 Саммари
+          {ACTIONS.summarize.label}
         </button>
-        <button on:click={() => openInFinder(rec.transcript_path!)}>👀 Транскрипт</button>
+        <button
+          class="secondary"
+          title={ACTIONS.viewTranscript.hint}
+          on:click={() => openInFinder(rec.transcript_path!)}
+        >
+          {ACTIONS.viewTranscript.label}
+        </button>
+        <button
+          class="ghost"
+          title={ACTIONS.retranscribe.hint}
+          on:click={() =>
+            run(ACTIONS.retranscribe.busy, () => transcribe(rec.path))}
+        >
+          {ACTIONS.retranscribe.label}
+        </button>
       {:else if rec.status === "summarized" && rec.summary_path}
         <button
-          on:click={() => run("PDF…", () => exportFile(rec.summary_path!, "pdf"))}
+          class="primary"
+          title={ACTIONS.exportPdf.hint}
+          on:click={() =>
+            run(ACTIONS.exportPdf.busy, () =>
+              exportFile(rec.summary_path!, "pdf"),
+            )}
         >
-          📄 PDF
+          {ACTIONS.exportPdf.label}
         </button>
-        <button on:click={() => openInFinder(rec.summary_path!)}>👀 Саммари</button>
+        <button
+          class="secondary"
+          title={ACTIONS.viewSummary.hint}
+          on:click={() => openInFinder(rec.summary_path!)}
+        >
+          {ACTIONS.viewSummary.label}
+        </button>
+        <button
+          class="ghost"
+          title={ACTIONS.resummarize.hint}
+          on:click={() =>
+            run(ACTIONS.resummarize.busy, () =>
+              summarize(rec.transcript_path!, "protocol"),
+            )}
+        >
+          {ACTIONS.resummarize.label}
+        </button>
       {/if}
-      <button class="secondary" on:click={() => openInFinder(rec.path)}>📂 Папка</button>
     </div>
   {/if}
 </div>
@@ -81,58 +145,94 @@
   .recording {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-    transition: border-color 0.15s;
+    border-radius: 16px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
+    transition: all 0.18s ease;
   }
   .recording:hover {
     border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
   }
   .recording.busy {
-    opacity: 0.7;
+    opacity: 0.85;
   }
+
   .header {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
     gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 12px;
   }
-  .status {
-    font-size: 20px;
-    line-height: 1;
-    margin-top: 2px;
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--status-color) 12%, transparent);
+    color: var(--status-color);
+    font-size: 12px;
+    font-weight: 600;
   }
-  .meta {
-    flex: 1;
+  .status-badge .emoji {
+    font-size: 14px;
   }
+
+  .meta-line {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
   .title {
     font-weight: 600;
     font-size: 15px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .info {
+
+  .hint {
     font-size: 13px;
     color: var(--text-muted);
+    margin-bottom: 12px;
+    line-height: 1.4;
   }
+
   .actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
   }
+
   button {
-    background: var(--accent);
-    color: white;
     border: none;
-    padding: 6px 14px;
-    border-radius: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
     font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
     font-family: inherit;
-    transition: background 0.15s;
+    transition: all 0.15s;
   }
   button:hover {
+    transform: translateY(-1px);
+  }
+  button.primary {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  button.primary:hover {
     background: var(--accent-hover);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
   }
   button.secondary {
     background: var(--bg-secondary);
@@ -141,17 +241,27 @@
   button.secondary:hover {
     background: var(--bg-secondary-hover);
   }
+  button.ghost {
+    background: transparent;
+    color: var(--text-muted);
+    padding: 8px 10px;
+  }
+  button.ghost:hover {
+    color: var(--text);
+    background: var(--bg-secondary);
+  }
+
   .busy-bar {
     display: flex;
     gap: 10px;
     align-items: center;
     color: var(--text-muted);
     font-size: 14px;
-    padding: 4px 0;
+    padding: 6px 0;
   }
   .spinner {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border: 2px solid var(--border);
     border-top-color: var(--accent);
     border-radius: 50%;
