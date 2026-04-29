@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-23
+
+### Added
+- **Speaker diarization без 2 дорожек** — `scripts/diarize.sh` через
+  pyannote.audio v3.1+, поддержка MPS/CUDA/CPU. Auto-detect числа спикеров.
+- **PDF / DOCX / HTML экспорт** — `scripts/export.sh` через pandoc + XeLaTeX
+  (кириллица + казахские буквы из коробки). Кастомные шаблоны через
+  `~/.config/kt-recorder/export/`.
+- **Custom summary templates** — 5 встроенных (`protocol`, `1on1`,
+  `interview`, `lecture`, `kazakh-formal`) + пользовательские. Флаг
+  `--template <name>` или `SUMMARIZER_TEMPLATE` в config.
+- **4 новых LLM-бэкенда** в `summarize.sh`: **Groq** (бесплатно, Llama 3.3 70B,
+  ~12 сек), **OpenRouter** (200+ моделей), **vLLM**/**LM Studio**
+  (OpenAI-compatible эндпоинты для корпоративных GPU-кластеров).
+- `scripts/setup-pyannote.sh` — installer для diarization окружения
+- `RELEASES/v0.2.0.md` — полные release notes
+- `marketing/linkedin/*.md` — драфты LinkedIn постов для продвижения
+
+### Changed
+- ROADMAP перепланирован: v0.2 теперь = "Pro features (bash)", v0.3 = Tauri UI,
+  v0.4 = Live, v0.5 = Public release. Сначала добиваем фичи, потом UI.
+
+## [0.1.0] - 2026-04-22
+
 ### Added
 - **On-demand режим через ярлычок на десктоп** —
   `launchagents/create-desktop-shortcut.sh` создаёт `KT Recorder.command`

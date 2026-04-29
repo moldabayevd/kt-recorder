@@ -46,7 +46,10 @@
 - **Русский язык из коробки** с моделью Large-v3 (или опционально fine-tune)
 - **Казахский и kk+ru code-switching** через опциональный бэкенд Qwen3-ASR — русские встречи остаются на whisper, смешанные автоматом уходят на модель которая умеет переключаться между языками внутри фразы ([подробнее](docs/custom-models.md#-казахский--kkru-code-switching))
 - **Автороутер языков** — `scripts/transcribe-auto.sh` сам детектит язык и выбирает бэкенд
-- **Саммаризация встреч** — `scripts/summarize.sh` превращает транскрипт в протокол с участниками, проектами, цитатами, таблицами и action items. Работает локально через Ollama (рекомендуется `qwen3:32b` для M4 Pro 24GB) или через Anthropic API для топового качества
+- **Саммаризация встреч** — `scripts/summarize.sh` превращает транскрипт в протокол с участниками, проектами, цитатами, таблицами и action items. **6 LLM-бэкендов** на выбор: Ollama (локально), Claude API, **Groq** (бесплатно, ~12 сек на час встречи), OpenRouter (200+ моделей), vLLM/LM Studio (для корпоративных GPU)
+- **Custom summary templates** — 5 встроенных шаблонов (`protocol`, `1on1`, `interview`, `lecture`, `kazakh-formal`) + пользовательские. Флаг `--template <name>`
+- **Speaker diarization без 2 дорожек** — `scripts/diarize.sh` через pyannote.audio v3.1+ для случая когда есть только одна mp3 (телефонный звонок, чужие записи)
+- **PDF / DOCX / HTML экспорт** — `scripts/export.sh` через pandoc + XeLaTeX, кириллица и казахские буквы из коробки
 - **Markdown + VTT-субтитры** — открывается где угодно, играется в IINA/VLC с субтитрами
 - **Автозапуск** через LaunchAgent, работает молча в фоне
 - **Совместимо с Obsidian** — frontmatter и теги в каждом файле

@@ -249,9 +249,94 @@ case "$SUMMARIZER_BACKEND" in
         rm -f "$tmp"
         ;;
 
+    groq)
+        # Groq — бесплатный быстрый Llama 3.3 70B / Mixtral / DeepSeek
+        # https://console.groq.com  → API key
+        command -v jq >/dev/null || { echo "✗ jq нужен: brew install jq" >&2; exit 1; }
+        [ -n "${GROQ_API_KEY:-}" ] || {
+            echo "✗ GROQ_API_KEY не задан" >&2; exit 1; }
+        : "${SUMMARIZER_MODEL:=llama-3.3-70b-versatile}"
+
+        echo "→ Groq API ($SUMMARIZER_MODEL)..."
+        tmp=$(mktemp)
+        jq -n --arg model "$SUMMARIZER_MODEL" \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg user "$TRANSCRIPT_CONTENT" \
+              '{model: $model, max_tokens: 8192, temperature: 0.3,
+                messages: [{role:"system", content:$system},
+                           {role:"user", content:$user}]}' > "$tmp"
+
+        curl -s https://api.groq.com/openai/v1/chat/completions \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "content-type: application/json" \
+            -d @"$tmp" | jq -r '.choices[0].message.content' > "$OUTPUT"
+        rm -f "$tmp"
+        ;;
+
+    openrouter)
+        # OpenRouter — gateway к 200+ моделям, можно платно или бесплатные тиры
+        # https://openrouter.ai  → API key
+        command -v jq >/dev/null || { echo "✗ jq нужен: brew install jq" >&2; exit 1; }
+        [ -n "${OPENROUTER_API_KEY:-}" ] || {
+            echo "✗ OPENROUTER_API_KEY не задан" >&2; exit 1; }
+        : "${SUMMARIZER_MODEL:=meta-llama/llama-3.3-70b-instruct}"
+
+        echo "→ OpenRouter ($SUMMARIZER_MODEL)..."
+        tmp=$(mktemp)
+        jq -n --arg model "$SUMMARIZER_MODEL" \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg user "$TRANSCRIPT_CONTENT" \
+              '{model: $model, max_tokens: 8192, temperature: 0.3,
+                messages: [{role:"system", content:$system},
+                           {role:"user", content:$user}]}' > "$tmp"
+
+        curl -s https://openrouter.ai/api/v1/chat/completions \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            -H "HTTP-Referer: https://github.com/moldabayevd/kt-recorder" \
+            -H "X-Title: KT Recorder" \
+            -H "content-type: application/json" \
+            -d @"$tmp" | jq -r '.choices[0].message.content' > "$OUTPUT"
+        rm -f "$tmp"
+        ;;
+
+    vllm|lmstudio|openai-compat)
+        # vLLM / LM Studio / любой OpenAI-compatible эндпоинт
+        # Полезно для корпоративных GPU-кластеров (например H200 в Казахтелеком)
+        # Конфиг:
+        #   VLLM_URL=http://gpu-cluster.internal/v1
+        #   VLLM_API_KEY=optional
+        command -v jq >/dev/null || { echo "✗ jq нужен" >&2; exit 1; }
+        : "${VLLM_URL:?VLLM_URL не задан (например http://localhost:8000/v1)}"
+        : "${SUMMARIZER_MODEL:=meta-llama/Llama-3.3-70B-Instruct}"
+
+        auth_header=""
+        [ -n "${VLLM_API_KEY:-}" ] && auth_header="Authorization: Bearer $VLLM_API_KEY"
+
+        echo "→ $SUMMARIZER_BACKEND endpoint: $VLLM_URL ($SUMMARIZER_MODEL)..."
+        tmp=$(mktemp)
+        jq -n --arg model "$SUMMARIZER_MODEL" \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg user "$TRANSCRIPT_CONTENT" \
+              '{model: $model, max_tokens: 8192, temperature: 0.3,
+                messages: [{role:"system", content:$system},
+                           {role:"user", content:$user}]}' > "$tmp"
+
+        if [ -n "$auth_header" ]; then
+            curl -s "$VLLM_URL/chat/completions" \
+                -H "$auth_header" \
+                -H "content-type: application/json" \
+                -d @"$tmp" | jq -r '.choices[0].message.content' > "$OUTPUT"
+        else
+            curl -s "$VLLM_URL/chat/completions" \
+                -H "content-type: application/json" \
+                -d @"$tmp" | jq -r '.choices[0].message.content' > "$OUTPUT"
+        fi
+        rm -f "$tmp"
+        ;;
+
     *)
         echo "✗ Неизвестный SUMMARIZER_BACKEND: $SUMMARIZER_BACKEND" >&2
-        echo "  Допустимо: ollama | claude" >&2
+        echo "  Допустимо: ollama | claude | groq | openrouter | vllm | lmstudio" >&2
         exit 1
         ;;
 esac

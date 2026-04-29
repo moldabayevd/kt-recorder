@@ -27,7 +27,19 @@
 
 ---
 
-## v0.2.0 — «Native UI» (1-2 недели)
+## ✅ v0.2.0 — «Pro features. Free.» (released 2026-04-23)
+
+Все фичи Meetily PRO выпущены **бесплатно** через bash + Python обёртки.
+См. [RELEASES/v0.2.0.md](RELEASES/v0.2.0.md).
+
+- ✅ Speaker diarization без 2 дорожек (pyannote.audio v3.1+)
+- ✅ PDF / DOCX / HTML экспорт через pandoc + XeLaTeX
+- ✅ Custom summary templates (protocol / 1on1 / interview / lecture / kazakh-formal)
+- ✅ 4 новых LLM-бэкенда: Groq / OpenRouter / vLLM / LM Studio
+
+---
+
+## v0.3.0 — «Native UI» (1-2 недели)
 
 Цель: убрать терминал из user flow для основных действий, не теряя
 хакабельность bash-скриптов под капотом.
@@ -52,33 +64,14 @@
 
 ---
 
-## v0.3.0 — «Pro-фичи бесплатно» (1-2 недели)
+<!-- v0.3 (Pro features) перенесён в v0.2 и зарелизен ✅ -->
+<!-- См. секцию выше: v0.2.0 — «Pro features. Free.» -->
 
-Цель: догнать и перегнать платный Meetily PRO.
-
-### Speaker diarization (без 2 дорожек)
-- [ ] Интеграция [pyannote.audio v3.1+](https://github.com/pyannote/pyannote-audio)
-- [ ] `scripts/diarize.sh` — на вход одна mp3, на выход разметка по спикерам
-- [ ] Объединение с whisper-транскриптом → `**Спикер 1:** ... **Спикер 2:** ...`
-- [ ] Опционально: автоматическое присвоение имён через LLM
-      («первый спикер представился как Марат → подставить»)
-
-### Экспорт в PDF / DOCX
-- [ ] `scripts/export.sh meeting.md --format pdf|docx`
-- [ ] pandoc + кастомный LaTeX/Word шаблон с логотипом проекта
-- [ ] Шаблоны: «протокол совещания», «1:1 заметки», «интервью»
-
-### Custom summary templates
-- [ ] `~/.config/kt-recorder/templates/<name>.txt` с разными промптами
-- [ ] В `kt` меню: «Сделать саммари → выбрать шаблон»
-- [ ] Встроенные: `protocol`, `1on1`, `interview`, `lecture`, `kazakh-formal`
-
-### Гибкие LLM провайдеры
-- [ ] `SUMMARIZER_BACKEND="groq"` — бесплатный Llama 3.3 70B через Groq API
-- [ ] `SUMMARIZER_BACKEND="openrouter"` — любая модель из OpenRouter
-- [ ] `SUMMARIZER_BACKEND="vllm"` — кастомный OpenAI-compatible endpoint
-      (для корпоративных GPU-кластеров типа H200 в Казахтелекоме)
-- [ ] `SUMMARIZER_BACKEND="lmstudio"` — локальный LM Studio сервер
+### Доп. идеи для будущих версий «Pro features»
+- [ ] Авто-присвоение имён спикерам через LLM («первый спикер представился
+      как Марат → подставить вместо SPEAKER_00»)
+- [ ] AI-инструмент для массового переноса дашбордов / документов между
+      платформами (Superset ↔ QlikSense use case)
 
 ---
 
