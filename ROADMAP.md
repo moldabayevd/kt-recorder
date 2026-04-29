@@ -39,17 +39,22 @@
 
 ---
 
-## v0.3.0 — «Native UI» (1-2 недели)
+## v0.3.0 — «Native UI» (1-2 недели) [in progress]
 
 Цель: убрать терминал из user flow для основных действий, не теряя
 хакабельность bash-скриптов под капотом.
 
 ### Tauri-приложение
-- [ ] Обёртка вокруг существующих bash-скриптов (Tauri 2.x, Svelte/Solid фронт)
-- [ ] Окно со списком записей (тот же контент что в `kt` меню сейчас)
-- [ ] Кнопки: Транскрибировать / Перетранскрибировать / Открыть папку
-- [ ] Иконка в Dock + индикатор статуса в menu bar
+- [x] Каркас [tauri-app/](tauri-app/) (Tauri 2.x + Svelte 4 + TypeScript)
+- [x] Rust commands — обёртки над всеми bash-скриптами
+- [x] Окно со списком записей со статусами raw/transcribed/summarized
+- [x] Кнопки: Транскрибировать / Саммари / PDF / Открыть в Finder
+- [x] Тёмная/светлая тема (auto по системе)
+- [x] Парсинг config.sh для отображения настроек
+- [ ] Прогресс-бары с парсингом stdout whisper-cli
+- [ ] Иконка в Dock + menu bar NSStatusItem индикатор
 - [ ] Drag-and-drop файла встречи прямо на иконку
+- [ ] Settings UI (без правки config.sh)
 
 ### Auto-detect meetings
 - [ ] AppleScript-watcher следит за процессами `zoom.us`,
